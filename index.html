@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Excel File & Sheet Viewer</title>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+    }
+    #fileMenu, #sheetMenu {
+      margin: 10px 0;
+    }
+    button {
+      margin: 5px;
+      padding: 10px;
+      cursor: pointer;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 20px;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 8px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Excel File & Sheet Viewer</h1>
+
+  <div id="fileMenu">
+    <h3>Select an Excel File:</h3>
+  </div>
+
+  <div id="sheetMenu">
+    <!-- Sheet buttons will be injected here -->
+  </div>
+
+  <div id="output">
+    <!-- Sheet content will appear here -->
+  </div>
+
+  <script>
+    const fileMenu = document.getElementById('fileMenu');
+    const sheetMenu = document.getElementById('sheetMenu');
+    const outputDiv = document.getElementById('output');
+    let currentWorkbook = null;
+
+    // Fetch list of Excel files
+    fetch('/excel-files')
+      .then(res => res.json())
+      .then(files => {
+        files.forEach(file => {
+          const btn = document.createElement('button');
+          btn.textContent = file;
+          btn.onclick = () => loadExcel(file);
+          fileMenu.appendChild(btn);
+        });
+      })
+      .catch(err => {
+        fileMenu.innerHTML += `<p style="color:red;">Failed to load file list</p>`;
+        console.error(err);
+      });
+
+    function loadExcel(filename) {
+      sheetMenu.innerHTML = '';
+      outputDiv.innerHTML = '';
+      fetch(filename)
+        .then(res => res.arrayBuffer())
+        .then(data => {
+          currentWorkbook = XLSX.read(data, { type: 'array' });
+          currentWorkbook.SheetNames.forEach(sheetName => {
+            const btn = document.createElement('button');
+            btn.textContent = sheetName;
+            btn.onclick = () => displaySheet(sheetName);
+            sheetMenu.appendChild(btn);
+          });
+        })
+        .catch(err => {
+          outputDiv.innerHTML = `<p style="color:red;">Error loading ${filename}</p>`;
+          console.error(err);
+        });
+    }
+
+    function displaySheet(sheetName) {
+      const sheet = currentWorkbook.Sheets[sheetName];
+      const html = XLSX.utils.sheet_to_html(sheet);
+      outputDiv.innerHTML = html;
+    }
+  </script>
+</body>
+</html>
