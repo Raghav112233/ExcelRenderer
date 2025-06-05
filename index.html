@@ -1,95 +1,296 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Excel File & Sheet Viewer</title>
+  <meta charset="UTF-8" />
+  <title>Data Dictionary</title>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
   <style>
     body {
       font-family: Arial, sans-serif;
       padding: 20px;
+      background-color: #ffffff;
+    }
+    .header {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
+    #nse_logo {
+      width: 150px;
+      height: auto;
+      margin-right: 20px;
+      position: absolute;
+      top: 40px;
+      left: 25px;
+    }
+    h1 {
+      margin-bottom: 20px;
     }
     #fileMenu, #sheetMenu {
       margin: 10px 0;
     }
     button {
       margin: 5px;
-      padding: 10px;
+      padding: 10px 15px;
+      border: none;
+      background-color: #007bff;
+      color: white;
+      border-radius: 5px;
       cursor: pointer;
+    }
+    button:hover {
+      background-color: #0056b3;
     }
     table {
       border-collapse: collapse;
       width: 100%;
       margin-top: 20px;
+      background: white;
     }
     th, td {
       border: 1px solid #ccc;
       padding: 8px;
     }
+    #searchSection {
+      margin-bottom: 20px;
+    }
+    #searchResults {
+      margin-top: 10px;
+      max-height: 200px;
+      overflow-y: auto;
+      background: white;
+      border: 1px solid #ccc;
+      padding: 10px;
+    }
+    #searchResults div {
+      cursor: pointer;
+      padding: 5px;
+      border-bottom: 1px solid #eee;
+    }
+    #searchResults div:hover {
+      background-color: #e0e0e0;
+    }
+    mark {
+      background-color: yellow;
+      color: black;
+    }
   </style>
 </head>
 <body>
-  <h1>Excel File & Sheet Viewer</h1>
+  <img src="nse.jpg" alt="nse_logo" id="nse_logo"/>
+  <div class="header">
+    <h1>Data Dictionary</h1>
+  </div>
+
+  <div id="searchSection">
+    <input id="searchInput" type="text" placeholder="Search all Excel files and sheets..." style="padding:8px; width: 300px;" />
+    <button id="searchBtn">Search</button>
+    <div id="searchResults"></div>
+  </div>
 
   <div id="fileMenu">
     <h3>Select an Excel File:</h3>
+    <div id="fileButtons"></div>
   </div>
 
   <div id="sheetMenu">
-    <!-- Sheet buttons will be injected here -->
+    <h3>Sheets:</h3>
+    <div id="sheetButtons"></div>
   </div>
 
-  <div id="output">
-    <!-- Sheet content will appear here -->
-  </div>
+  <div id="output"></div>
 
   <script>
-    const fileMenu = document.getElementById('fileMenu');
-    const sheetMenu = document.getElementById('sheetMenu');
+    const fileButtons = document.getElementById('fileButtons');
+    const sheetButtons = document.getElementById('sheetButtons');
     const outputDiv = document.getElementById('output');
+    const searchInput = document.getElementById('searchInput');
+    const searchBtn = document.getElementById('searchBtn');
+    const searchResultsDiv = document.getElementById('searchResults');
+
     let currentWorkbook = null;
+    let currentFilename = null;
 
-    // Fetch list of Excel files
-    fetch('/excel-files')
-      .then(res => res.json())
-      .then(files => {
-        files.forEach(file => {
-          const btn = document.createElement('button');
-          btn.textContent = file;
-          btn.onclick = () => loadExcel(file);
-          fileMenu.appendChild(btn);
-        });
-      })
-      .catch(err => {
-        fileMenu.innerHTML += `<p style="color:red;">Failed to load file list</p>`;
-        console.error(err);
-      });
+    // Cache loaded workbooks for faster searching & displaying
+    const workbookCache = {};
 
-    function loadExcel(filename) {
-      sheetMenu.innerHTML = '';
-      outputDiv.innerHTML = '';
-      fetch(filename)
-        .then(res => res.arrayBuffer())
-        .then(data => {
-          currentWorkbook = XLSX.read(data, { type: 'array' });
-          currentWorkbook.SheetNames.forEach(sheetName => {
+    // Load file list and create buttons
+    function loadFileList() {
+      fileButtons.innerHTML = '';
+      fetch('/excel-files')
+        .then(res => res.json())
+        .then(files => {
+          files.forEach(file => {
             const btn = document.createElement('button');
-            btn.textContent = sheetName;
-            btn.onclick = () => displaySheet(sheetName);
-            sheetMenu.appendChild(btn);
+            btn.textContent = file;
+            btn.onclick = () => loadExcel(file);
+            fileButtons.appendChild(btn);
           });
         })
         .catch(err => {
-          outputDiv.innerHTML = `<p style="color:red;">Error loading ${filename}</p>`;
+          fileButtons.innerHTML = `<p style="color:red;">Failed to load file list.</p>`;
           console.error(err);
         });
     }
 
-    function displaySheet(sheetName) {
+    // Load an Excel file and display sheets buttons
+    function loadExcel(filename) {
+      sheetButtons.innerHTML = '';
+      outputDiv.innerHTML = '';
+      currentFilename = filename;
+      if (workbookCache[filename]) {
+        currentWorkbook = workbookCache[filename];
+        displaySheetButtons();
+      } else {
+        fetch(`/${filename}`)
+          .then(res => res.arrayBuffer())
+          .then(data => {
+            currentWorkbook = XLSX.read(data, { type: 'array' });
+            workbookCache[filename] = currentWorkbook;
+            displaySheetButtons();
+          })
+          .catch(err => {
+            outputDiv.innerHTML = `<p style="color:red;">Error loading ${filename}</p>`;
+            console.error(err);
+          });
+      }
+    }
+
+    // Show sheet buttons for current workbook
+    function displaySheetButtons() {
+      sheetButtons.innerHTML = '';
+      currentWorkbook.SheetNames.forEach(sheetName => {
+        const btn = document.createElement('button');
+        btn.textContent = sheetName;
+        btn.onclick = () => displaySheet(sheetName);
+        sheetButtons.appendChild(btn);
+      });
+    }
+
+    // Display sheet content, highlighting search matches if any
+    function displaySheet(sheetName, highlights = []) {
       const sheet = currentWorkbook.Sheets[sheetName];
-      const html = XLSX.utils.sheet_to_html(sheet);
+      let html = XLSX.utils.sheet_to_html(sheet);
+
+      if (highlights.length > 0) {
+        // Highlight all matched cells
+        highlights.forEach(addr => {
+          // Add <mark> tags around matching cell values in generated html table
+          // We'll do a simple string replace on cell value to add highlight
+          // The cell value is inside <td>...</td> with no HTML inside normally
+
+          // Create regex to find cell text and wrap with <mark>
+          const regex = new RegExp(`(<td[^>]*>)([^<]*${escapeRegExp(addr.value)}[^<]*)(</td>)`, 'gi');
+          html = html.replace(regex, (match, p1, p2, p3) => {
+            // Highlight matched text inside the cell value
+            const markedText = p2.replace(new RegExp(escapeRegExp(addr.value), 'gi'), `<mark>${addr.value}</mark>`);
+            return `${p1}${markedText}${p3}`;
+          });
+        });
+      }
+
       outputDiv.innerHTML = html;
     }
+
+    // Escape special characters in string for regex
+    function escapeRegExp(string) {
+      return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    // Search all Excel files & sheets for a text query
+    async function searchAll(query) {
+      if (!query) {
+        searchResultsDiv.innerHTML = '<p style="color:gray;">Enter search text above.</p>';
+        return;
+      }
+      searchResultsDiv.innerHTML = 'Searching...';
+      const files = await fetch('/excel-files').then(res => res.json());
+      const results = [];
+
+      // Load all files sequentially (can be improved to parallel if needed)
+      for (const file of files) {
+        let wb;
+        if (workbookCache[file]) {
+          wb = workbookCache[file];
+        } else {
+          try {
+            const data = await fetch(`/${file}`).then(res => res.arrayBuffer());
+            wb = XLSX.read(data, { type: 'array' });
+            workbookCache[file] = wb;
+          } catch (err) {
+            console.error(`Failed to load ${file}:`, err);
+            continue;
+          }
+        }
+
+        // Search each sheet for query
+        for (const sheetName of wb.SheetNames) {
+          const sheet = wb.Sheets[sheetName];
+          const range = XLSX.utils.decode_range(sheet['!ref']);
+          let foundInSheet = false;
+          const matchedCells = [];
+
+          for (let R = range.s.r; R <= range.e.r; ++R) {
+            for (let C = range.s.c; C <= range.e.c; ++C) {
+              const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+              const cell = sheet[cellAddress];
+              if (cell && cell.v != null) {
+                const cellText = cell.v.toString();
+                if (cellText.toLowerCase().includes(query.toLowerCase())) {
+                  foundInSheet = true;
+                  matchedCells.push({ addr: cellAddress, value: cell.v.toString() });
+                }
+              }
+            }
+          }
+
+          if (foundInSheet) {
+            results.push({
+              file,
+              sheetName,
+              matches: matchedCells
+            });
+          }
+        }
+      }
+
+      // Display search results
+      if (results.length === 0) {
+        searchResultsDiv.innerHTML = '<p>No matches found.</p>';
+        return;
+      }
+
+      searchResultsDiv.innerHTML = '';
+      results.forEach(({ file, sheetName, matches }) => {
+        const div = document.createElement('div');
+        div.textContent = `${file} > ${sheetName} (${matches.length} match${matches.length > 1 ? 'es' : ''})`;
+        div.style.fontWeight = 'bold';
+        div.onclick = () => {
+          // Load that file & sheet and highlight matched cells
+          loadExcel(file);
+          // Delay display sheet to wait for load
+          setTimeout(() => {
+            displaySheet(sheetName, matches.map(m => ({ value: query })));
+          }, 300);
+        };
+        searchResultsDiv.appendChild(div);
+      });
+    }
+
+    searchBtn.addEventListener('click', () => {
+      const query = searchInput.value.trim();
+      searchAll(query);
+    });
+
+    // Also allow Enter key in search input
+    searchInput.addEventListener('keyup', (e) => {
+      if (e.key === 'Enter') {
+        searchBtn.click();
+      }
+    });
+
+    // Initial load of file buttons
+    loadFileList();
   </script>
 </body>
 </html>
